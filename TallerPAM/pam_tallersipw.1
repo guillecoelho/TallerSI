@@ -1,0 +1,32 @@
+PAM_TALLERSIPW       Linux-PAM Manual        PAM_TALLERSIPW
+
+NOMBRE
+     pam_tallersipw.so - Modulo de autenticacion y cambio de contraseña
+
+SINOPSIS
+     pam_tallersipw.so ruta_base_de_datos
+
+DESCRIPCION
+     Este es un modulo de autenticacion y camibio de contraseña. El mismo usa librerias de sistema para obtener y cambiar informacion de las cuentas de usuario asi como para su autenticacion. Esta misma se toma desde la base de datos que el administrador haya creado.
+     
+     La interfaz de authenticate va a encargarse de validar al usuario con sus credenciales, dado el caso, su contraseña.
+
+     La interfaz de password se encarga del cambio de contraseña del usuario. El tipo hash usado para encriptar la contraseña es propocionado por el usuario.
+
+     En el control de debug es empleado syslog.
+
+TIPOS DE MODULO PROPORSIONADOS
+     Los modulos de auth y password son proporcionados.
+
+EJEMPLO
+     Un ejemplo de uso para /etc/pam.d/taller puede ser:
+
+     #Autenticar usuario
+     auth required pam_tallersipw.so /etc/passwd
+     #Cambiar contraseña
+     password required pam_tallersipw.so /etc/passwd
+
+AUTORES
+     Escrito por Guillermo Coelho y Agustin Rieppi.
+
+     Manual              28/09/2020                PAM_TALLERSIPW
