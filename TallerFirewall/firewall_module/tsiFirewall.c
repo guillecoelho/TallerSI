@@ -391,7 +391,7 @@ static int __init mfw_mod_init(void) {
     Out_policy = 0;
     /* Register character device */
     // ret = register_chrdev(DEVICE_MAJOR_NUM, DEVICE_INTF_NAME, &mfw_dev_fops);
-    ent = proc_create(DEVICE_INTF_NAME, 0660, NULL, &mfw_dev_fops);
+    ent = proc_create(DEVICE_INTF_NAME, 0660, NULL, &mfw_dev_fops); // Creates firewall configuration entry
     if (ent == NULL) {
         printk(KERN_ALERT "MiniFirewall: Fails to create proc entry\n");
         return -ENOMEM;
