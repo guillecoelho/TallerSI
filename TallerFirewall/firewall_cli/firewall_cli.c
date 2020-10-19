@@ -38,7 +38,7 @@ static void print_usage(void) {
 /*
  * The function sends a command to a MiniFirewall module via a device file.
  */
-static void send_instruction(struct mfw_ctl *ctl) {
+static void send_instruction(struct fw_ctl *ctl) {
     FILE *fp;
     int byte_count;
 
@@ -62,7 +62,11 @@ static void view_rules(void) {
     char *buffer;
     int byte_count;
     struct in_addr addr;
-    struct mfw_rule *rule;
+    struct fw_rule *rule;
+    unsigned int Out_policy;
+    unsigned int In_policy;
+    struct fw_ctl *ctl;
+    
 
     fp = fopen("/proc/tsiFirewall", "r");
     if (fp == NULL) {
@@ -70,7 +74,7 @@ static void view_rules(void) {
         return;
     }
 
-    buffer = (char *)malloc(sizeof(*rule));
+    buffer = (char *)malloc(sizeof(*ctl));
     if (buffer == NULL) {
         printf("Rule cannot be printed duel to insufficient memory\n");
         return;
@@ -80,22 +84,30 @@ static void view_rules(void) {
 	printf("I/O  "
 	       "S_Addr           S_Mask           S_Port "
 	       "D_Addr           D_Mask           D_Port Proto  Action\n");
-    while ((byte_count = fread(buffer, 1, sizeof(struct mfw_rule), fp)) > 0) {
-        rule = (struct mfw_rule *)buffer;
-        printf("%-3s  ", rule->in ? "In" : "Out");
-        addr.s_addr = rule->s_ip;
-        printf("%-15s  ", inet_ntoa(addr));
-        addr.s_addr = rule->s_mask;
-        printf("%-15s  ", inet_ntoa(addr));
-        printf("%-5d  ", ntohs(rule->s_port));
-        addr.s_addr = rule->d_ip;
-        printf("%-15s  ", inet_ntoa(addr));
-        addr.s_addr = rule->d_mask;
-        printf("%-15s  ", inet_ntoa(addr));
-        printf("%-5d  ", ntohs(rule->d_port));
-        printf("%-3d", rule->proto);
-        printf("%-5s\n", rule->action ? "    Allow" : "    Deny");
+    while ((byte_count = fread(buffer, 1, sizeof(struct fw_ctl), fp)) > 0) {
+        ctl = (struct fw_ctl *)buffer;
+        rule = &ctl->rule;
+        if (ctl->mode == FW_POLICY) {
+            if (rule->in == 1) In_policy = rule->action;
+            if (rule->in == 0) Out_policy = rule->action;
+        } else if (ctl->mode == FW_VIEW) {
+            printf("%-3s  ", rule->in ? "In" : "Out");
+            addr.s_addr = rule->s_ip;
+            printf("%-15s  ", inet_ntoa(addr));
+            addr.s_addr = rule->s_mask;
+            printf("%-15s  ", inet_ntoa(addr));
+            printf("%-5d  ", ntohs(ctl->rule.s_port));
+            addr.s_addr = rule->d_ip;
+            printf("%-15s  ", inet_ntoa(addr));
+            addr.s_addr = rule->d_mask;
+            printf("%-15s  ", inet_ntoa(addr));
+            printf("%-5d  ", ntohs(rule->d_port));
+            printf("%-3d", rule->proto);
+            printf("%-5s\n", rule->action ? "    Allow" : "    Deny");
+        }
     }
+    printf("\n* Default policy for Inbound Packet: %s\n", In_policy ? "Allow" : "Deny");
+    printf("* Default policy for Outund Packet: %s\n", Out_policy ? "Allow" : "Deny");
     free(buffer);
     fclose(fp);
 }
@@ -117,11 +129,11 @@ static int64_t parse_number(const char *str, uint32_t min_val,
 /*
  * The function parses arguments (argv) to form a control instruction.
  */
-static int parse_arguments(int argc, char **argv, struct mfw_ctl *ret_ctl) {
+static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
     int opt;
     int64_t lnum;
     int opt_index;
-    struct mfw_ctl ctl = {};
+    struct fw_ctl ctl = {};
     struct in_addr addr;
 
     /* Long option configuration */
@@ -149,7 +161,7 @@ static int parse_arguments(int argc, char **argv, struct mfw_ctl *ret_ctl) {
         return 0;
     }
 
-    ctl.mode = MFW_NONE;
+    ctl.mode = FW_NONE;
     ctl.rule.in = 255;
     ctl.rule.action = 255;
     while (1) {
@@ -242,33 +254,33 @@ static int parse_arguments(int argc, char **argv, struct mfw_ctl *ret_ctl) {
                 ctl.rule.proto = (uint8_t)lnum;
                 break;
             case 'a': /* Add rule */
-                if (ctl.mode != MFW_NONE) {
+                if (ctl.mode != FW_NONE) {
                     printf("Only one mode can be selected.\n");
                     return -1;
                 }
-                ctl.mode = MFW_ADD;
+                ctl.mode = FW_ADD;
                 break;
             case 'r': /* Remove rule */
-                if (ctl.mode != MFW_NONE) {
+                if (ctl.mode != FW_NONE) {
                     printf("Only one mode can be selected.\n");
                     return -1;
                 }
-                ctl.mode = MFW_REMOVE;
+                ctl.mode = FW_REMOVE;
                 break;
             case 'v': /* View rules */
-                if (ctl.mode != MFW_NONE) {
+                if (ctl.mode != FW_NONE) {
                     printf("Only one mode can be selected.\n");
                     return -1;
                 }
-                ctl.mode = MFW_VIEW;
+                ctl.mode = FW_VIEW;
                 break;
             case 'g': /* Change policy rules */
-                if (ctl.mode != MFW_NONE) {
+                if (ctl.mode != FW_NONE) {
                     printf("Only one mode can be selected.\n");
                     return -1;
                 }
                 ctl.rule.action = 0;
-                ctl.mode = MFW_POLICY;
+                ctl.mode = FW_POLICY;
                 break;
             case 'h':
             case '?':
@@ -277,15 +289,15 @@ static int parse_arguments(int argc, char **argv, struct mfw_ctl *ret_ctl) {
                 return -1;
         }
     }
-    if (ctl.mode == MFW_NONE) {
+    if (ctl.mode == FW_NONE) {
         printf("Please specify mode --(add|remove|view|policy)\n");
         return -1;
     }
-    if (ctl.mode != MFW_VIEW && ctl.rule.in == 255) {
+    if (ctl.mode != FW_VIEW && ctl.rule.in == 255) {
         printf("Please specify either In or Out\n");
         return -1;
     }
-    if (ctl.mode != MFW_VIEW && ctl.rule.action == 255) {
+    if (ctl.mode != FW_VIEW && ctl.rule.action == 255) {
         printf("Please specify either block or unblock\n");
         return -1;
         
@@ -296,23 +308,23 @@ static int parse_arguments(int argc, char **argv, struct mfw_ctl *ret_ctl) {
 }
 
 int main(int argc, char *argv[]) {
-    struct mfw_ctl ctl = {};
+    struct fw_ctl ctl = {};
     int ret;
 
     ret = parse_arguments(argc, argv, &ctl);
     if (ret < 0) return ret;
 
     switch (ctl.mode) {
-        case MFW_ADD:
+        case FW_ADD:
             send_instruction(&ctl);
             break;
-        case MFW_REMOVE:
+        case FW_REMOVE:
             send_instruction(&ctl);
             break;
-        case MFW_POLICY:
+        case FW_POLICY:
             send_instruction(&ctl);
             break;
-        case MFW_VIEW:
+        case FW_VIEW:
             view_rules();
             break;
         default:

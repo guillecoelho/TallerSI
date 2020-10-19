@@ -3,10 +3,8 @@
 #include <linux/init.h>
 #include <linux/ip.h>
 #include <linux/kernel.h>
-#include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
-#include <linux/moduleparam.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/proc_fs.h>
 #include <linux/slab.h>
@@ -15,6 +13,7 @@
 #include <linux/udp.h>
 #include <linux/version.h>
 #include <linux/inet.h>
+
 #include "../firewall.h"
 
 #define EQUAL_NET_ADDR(ip1, ip2) ((ip1 ^ ip2) == 0)
@@ -23,48 +22,98 @@
 #define IP_POS(ip, i) (ip >> ((8 * (3 - i))) & 0xFF)
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Agustin Rieppi / Guillermo Coelho");
+MODULE_AUTHOR("Grupo-03");
+MODULE_DESCRIPTION("tsiFirewall Loadable Kernel Module");
 
 /* List node containing a filter rule */
 struct rule_node {
-    struct mfw_rule rule;
+    struct fw_rule rule;
     struct list_head list;
 };
 
-struct list_head In_lhead;       /* Head of inbound-rule list */
+static struct list_head In_lhead;       /* Head of inbound-rule list */
 static unsigned char In_policy;  /* Default policy for inbound list*/
-struct list_head Out_lhead;      /* Head of outbound-rule list */
+static struct list_head Out_lhead;      /* Head of outbound-rule list */
 static unsigned char Out_policy; /* Default policy for inbound list*/
+static unsigned char remain_read_policy;
 
 static int Device_open; /* Opening counter of a device file */
 static char *Buffer;    /* A buffer for receving data from a user space */
 
-static bool check_ip(unsigned int ip, unsigned int rule_ip,
+/*
+*  Check sanity of a rule
+*/
+static bool fw_check_rule(struct fw_ctl *ctlp) {
+    if  (ctlp->mode == FW_ADD ||  ctlp->mode == FW_REMOVE) {
+        if ((ctlp->rule.in == 0 || ctlp->rule.in == 1) && 
+            (ctlp->rule.action == 0 || ctlp->rule.action == 1) &&
+            (ctlp->rule.proto == IPPROTO_UDP || ctlp->rule.proto == IPPROTO_TCP || ctlp->rule.proto == IPPROTO_ICMP || ctlp->rule.proto == 0)) {
+                return true;
+            }
+    } else if (ctlp->mode == FW_POLICY) {
+        if ((ctlp->rule.in == 0 || ctlp->rule.in == 1) && (ctlp->rule.action == 0 || ctlp->rule.action == 1)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/*
+* Compare two given ipv4 and return true if they are equal
+*/
+static bool fw_check_ip(unsigned int ip, unsigned int rule_ip,
                      unsigned int rule_mask) {
-    bool a = false;
+    bool equal = false;
     /*if (NOT_ZERO(rule_mask)) {
         printk(KERN_INFO "Check ip with mask");
         printk(KERN_INFO "IP: %d", rule_mask);
         a = EQUAL_NET_ADDR_MASK(ip, rule_ip, rule_mask);
     } else {*/
-        printk(KERN_INFO "IP: %d", ip);
-        printk(KERN_INFO "RULE IP: %d", rule_ip);
-        a =  EQUAL_NET_ADDR(ip, rule_ip);
+    equal =  EQUAL_NET_ADDR(ip, rule_ip);
     //}
-    printk(KERN_INFO "Check ip result %d",a);
-    return a;
+    return equal;
 }
 
 /*
- * General filter uses exact match algorithm based on the given rule list.
+ * The function check if a rule already exist.
  */
-unsigned int mfw_general_filter(void *priv, struct sk_buff *skb,
+static bool fw_rule_exist(struct fw_rule *rule) {
+    struct rule_node *node;
+    struct list_head *lheadp;
+    struct list_head *lp;
+
+    if (rule->in == 1)
+        lheadp = &In_lhead;
+    else
+        lheadp = &Out_lhead;
+
+    for (lp = lheadp; lp->next != lheadp; lp = lp->next) {
+        node = list_entry(lp->next, struct rule_node, list);
+        if (node->rule.in == rule->in && node->rule.s_ip == rule->s_ip &&
+            node->rule.s_mask == rule->s_mask &&
+            node->rule.s_port == rule->s_port &&
+            node->rule.d_ip == rule->d_ip &&
+            node->rule.d_mask == rule->d_mask &&
+            node->rule.d_port == rule->d_port &&
+            node->rule.proto == rule->proto &&
+            node->rule.action == rule->action) {
+                return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * This method uses exact match algorithm based on the given rule list.
+ */
+static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
                                        const struct nf_hook_state *state,
                                        struct list_head *rule_list_head,
                                        unsigned char policy) {
     struct list_head *listh;
     struct rule_node *node;
-    struct mfw_rule *r;
+    struct fw_rule *r;
     struct iphdr *iph;
     struct tcphdr *tcph;
     struct udphdr *udph;
@@ -85,6 +134,8 @@ unsigned int mfw_general_filter(void *priv, struct sk_buff *skb,
     proto = iph->protocol;
     s_ip = iph->saddr;
     d_ip = iph->daddr;
+
+    /* Get trasport header and get information */
     if (proto == IPPROTO_UDP) {
         udph = (struct udphdr *)(skb_transport_header(skb));
         s_port = udph->source;
@@ -104,19 +155,24 @@ unsigned int mfw_general_filter(void *priv, struct sk_buff *skb,
         r = &node->rule;
 
         if (NOT_ZERO(r->proto) && (r->proto != iph->protocol)) continue;
-        if (NOT_ZERO(r->s_ip) && !check_ip(s_ip, r->s_ip, r->s_mask)) continue;
+
+        if (NOT_ZERO(r->s_ip) && !fw_check_ip(s_ip, r->s_ip, r->s_mask)) continue;
+
         if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->s_port) && (r->s_port != s_port)) continue;
         }
-        if (NOT_ZERO(r->d_ip) && !check_ip(d_ip, r->d_ip, r->d_mask)) continue;
+
+        if (NOT_ZERO(r->d_ip) && !fw_check_ip(d_ip, r->d_ip, r->d_mask)) continue;
+
         if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->d_port) && (r->d_port != d_port)) continue;
         }
+
         if (r->action == 1){
-            return NF_ACCEPT;
+            return NF_ACCEPT;          
        } else if (r->action == 0) {
             printk(KERN_INFO
-                   "MiniFirewall: Drop packet "
+                   "tsiFirewall: Drop packet "
                    "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d\n",
                    IP_POS(s_ip, 3), IP_POS(s_ip, 2), IP_POS(s_ip, 1),
                    IP_POS(s_ip, 0), s_port, IP_POS(d_ip, 3), IP_POS(d_ip, 2),
@@ -124,38 +180,36 @@ unsigned int mfw_general_filter(void *priv, struct sk_buff *skb,
             return NF_DROP;
         }
     }
-    //return NF_ACCEPT;
+
     /* No rule match, apply default policy */
     return (policy == 0 ? NF_DROP : NF_ACCEPT);
 }
 
 /*
- * Inbound filter is applied to all inbound packets.
+ * Inbound filter, filter packages using general filter.
  */
-unsigned int mfw_in_filter(void *priv, struct sk_buff *skb,
-                                  const struct nf_hook_state *state) {
-    return mfw_general_filter(priv, skb, state, &In_lhead, In_policy);
+static unsigned int fw_in_filter(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+    return fw_general_filter(priv, skb, state, &In_lhead, In_policy);
 }
 
 /*
- * Outbound filter is applied to all outbound packets.
+ * Outbound filter, filter packages using general filter.
  */
-unsigned int mfw_out_filter(void *priv, struct sk_buff *skb,
-                                   const struct nf_hook_state *state) {
-    return mfw_general_filter(priv, skb, state, &Out_lhead, Out_policy);
+static unsigned int fw_out_filter(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+    return fw_general_filter(priv, skb, state, &Out_lhead, Out_policy);
 }
 
 /*
  * The function handles an open operation of a device file.
  */
-int mfw_dev_open(struct inode *inode, struct file *file) {
+static int fw_dev_open(struct inode *inode, struct file *file) {
     if (Device_open) return -EBUSY;
 
     /* Increase value to enforce a signal access policy */
     Device_open++;
 
     if (!try_module_get(THIS_MODULE)) {
-        printk(KERN_ALERT "MiniFirewall: Module is not available\n");
+        printk(KERN_ALERT "tsiFirewall: Module is not available\n");
         return -ESRCH;
     }
     return 0;
@@ -164,7 +218,7 @@ int mfw_dev_open(struct inode *inode, struct file *file) {
 /*
  * The function handles a release operation of a device file.
  */
-int mfw_dev_release(struct inode *inode, struct file *file) {
+static int fw_dev_release(struct inode *inode, struct file *file) {
     module_put(THIS_MODULE);
     Device_open--;
     return 0;
@@ -173,39 +227,54 @@ int mfw_dev_release(struct inode *inode, struct file *file) {
 /*
  * The function handles user-space view operation, which reads inbound and
  * outbound rules stored in the module. The function is called iteratively
- * until it returns 0.
+ * until it read all the rules, then it return the default policies and then returns 0.
  */
-ssize_t mfw_dev_read(struct file *file, char *buffer, size_t length,
-                            loff_t *offset) {
+static ssize_t fw_dev_read(struct file *file, char *buffer, size_t length, loff_t *offset) {
     int byte_read = 0;
     static struct list_head *inlp = &In_lhead;
     static struct list_head *outlp = &Out_lhead;
+    static struct fw_ctl resy = {};
     struct rule_node *node;
     char *readptr;
-    
-    printk(KERN_ALERT "leyendo regla");
+
+
+    if (remain_read_policy == 2)  {
+        resy.mode = FW_POLICY;
+        resy.rule.in = 1;
+        resy.rule.action = In_policy;
+        remain_read_policy -= 1;
+    } else if (remain_read_policy == 1) {
+        resy.mode = FW_POLICY;
+        resy.rule.in = 0;
+        resy.rule.action = Out_policy;
+        remain_read_policy -= 1;
+    }
     /* Read a rule if it is not the last one in the inbound list */
-    if (inlp->next != &In_lhead) {
+    else if (inlp->next != &In_lhead) {
         node = list_entry(inlp->next, struct rule_node, list);
-        readptr = (char *)&node->rule;
+        resy.mode = FW_VIEW;
+        resy.rule = node->rule;
+        readptr = (char *)&resy;
         inlp = inlp->next;
     }
     /* Read a rule if it is not the last one in the outbound list */
     else if (outlp->next != &Out_lhead) {
         node = list_entry(outlp->next, struct rule_node, list);
-        readptr = (char *)&node->rule;
+        resy.mode = FW_VIEW;
+        resy.rule = node->rule;
+        readptr = (char *)&resy;
         outlp = outlp->next;
     }
     /* Reset reading pointers to heads of inbound and outbound lists */
     else {
+        remain_read_policy = 2;
         inlp = &In_lhead;
         outlp = &Out_lhead;
-        
         return 0;
     }
 
     /* Write to a user-space buffer */
-    while (length && (byte_read < sizeof(struct mfw_rule))) {
+    while (length && (byte_read < sizeof(struct fw_ctl))) {
         put_user(readptr[byte_read], &(buffer[byte_read]));
         byte_read++;
         length--;
@@ -216,12 +285,18 @@ ssize_t mfw_dev_read(struct file *file, char *buffer, size_t length,
 /*
  * The function adds a rule to either an inbound list or an outbound list.
  */
-void mfw_rule_add(struct mfw_rule *rule) {
+static void fw_rule_add(struct fw_rule *rule) {
     struct rule_node *nodep;
+    
+    if (fw_rule_exist(rule)) {
+        printk(KERN_ALERT "tsiFirewall: Cannot add a new rule, because already exist\n");
+        return;
+    }
+
     nodep = (struct rule_node *)kmalloc(sizeof(struct rule_node), GFP_KERNEL);
     if (nodep == NULL) {
         printk(KERN_ALERT
-               "MiniFirewall: Cannot add a new rule due to "
+               "tsiFirewall: Cannot add a new rule due to "
                "insufficient memory\n");
         return;
     }
@@ -229,11 +304,12 @@ void mfw_rule_add(struct mfw_rule *rule) {
 
     if (nodep->rule.in == 1) {
         list_add_tail(&nodep->list, &In_lhead);
-        printk(KERN_INFO "MiniFirewall: Add rule to the inbound list ");
+        printk(KERN_INFO "tsiFirewall: Add rule to the inbound list ");
     } else {
         list_add_tail(&nodep->list, &Out_lhead);
-        printk(KERN_INFO "MiniFirewall: Add rule to the outbound list ");
+        printk(KERN_INFO "tsiFirewall: Add rule to the outbound list ");
     }
+    /* Print to log the new rule */
     printk(KERN_INFO "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d  <--- %d\n",
            IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2), IP_POS(rule->s_ip, 1),
            IP_POS(rule->s_ip, 0), rule->s_port, IP_POS(rule->d_ip, 3),
@@ -244,7 +320,7 @@ void mfw_rule_add(struct mfw_rule *rule) {
 /*
  * The function deletes a rule from inbound and outbound lists.
  */
-void mfw_rule_del(struct mfw_rule *rule) {
+static void fw_rule_del(struct fw_rule *rule) {
     struct rule_node *node;
     struct list_head *lheadp;
     struct list_head *lp;
@@ -267,7 +343,7 @@ void mfw_rule_del(struct mfw_rule *rule) {
             list_del(lp->next);
             kfree(node);
             printk(KERN_INFO
-                   "MiniFirewall: Remove rule "
+                   "tsiFirewall: Remove rule "
                    "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   "
                    "proto %d\n",
                    IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2),
@@ -283,12 +359,12 @@ void mfw_rule_del(struct mfw_rule *rule) {
 /*
  * The function change de default policy for either an inbound list or an outbound list.
  */
-void mfw_rule_policy(struct mfw_rule *rule) {
+static void fw_rule_policy(struct fw_rule *rule) {
     struct rule_node *nodep;
     nodep = (struct rule_node *)kmalloc(sizeof(struct rule_node), GFP_KERNEL);
     if (nodep == NULL) {
         printk(KERN_ALERT
-               "MiniFirewall: Cannot add a new rule due to "
+               "tsiFirewall: Cannot add a new rule due to "
                "insufficient memory\n");
         return;
     }
@@ -300,29 +376,29 @@ void mfw_rule_policy(struct mfw_rule *rule) {
         } else if (nodep->rule.action == 1) {
             In_policy = 1;
         }
-        printk(KERN_INFO "MiniFirewall: Change default policy to the inbound list");
+        printk(KERN_INFO "tsiFirewall: Change default policy to the inbound list");
     } else {
         if (nodep->rule.action == 0) {
             Out_policy = 0;
         } else if (nodep->rule.action == 1) {
             Out_policy = 1;
         }   
-        printk(KERN_INFO "MiniFirewall: Change default policy to the outbound list ");
+        printk(KERN_INFO "tsiFirewall: Change default policy to the outbound list ");
     }
 }
 
 
 /*
- * The function handles user-space write operation, which sends add and remove
- * instruction to the MiniFirewall module
+ * The function handles user-space write operation, which sends add, remove, list
+ * instruction to the tsiFirewall module
  */
-ssize_t mfw_dev_write(struct file *file, const char *buffer,
+static ssize_t fw_dev_write(struct file *file, const char *buffer,
                              size_t length, loff_t *offset) {
-    struct mfw_ctl *ctlp;
+    struct fw_ctl *ctlp;
     int byte_write = 0;
-    printk(KERN_ALERT "MiniFirewall: Try to add rule\n");
+    printk(KERN_ALERT "tsiFirewall: Try to add rule\n");
     if (length < sizeof(*ctlp)) {
-        printk(KERN_ALERT "MiniFirewall: Receives incomplete instruction\n");
+        printk(KERN_ALERT "tsiFirewall: Receives incomplete instruction\n");
         return byte_write;
     }
 
@@ -333,86 +409,94 @@ ssize_t mfw_dev_write(struct file *file, const char *buffer,
         length--;
     }
 
-    ctlp = (struct mfw_ctl *)Buffer;
+    ctlp = (struct fw_ctl *)Buffer;
+    /* Sanity check of the new rule */ 
+    if (!fw_check_rule(ctlp)) {
+        printk(KERN_ALERT "tsiFirewall: Received an unknown command\n");
+        return byte_write;
+    }
+
     switch (ctlp->mode) {
-        case MFW_ADD:
-            mfw_rule_add(&ctlp->rule);
+        case FW_ADD:
+            fw_rule_add(&ctlp->rule);
             break;
-        case MFW_REMOVE:
-            mfw_rule_del(&ctlp->rule);
+        case FW_REMOVE:
+            fw_rule_del(&ctlp->rule);
             break;
-        case MFW_POLICY:
-            mfw_rule_policy(&ctlp->rule);
+        case FW_POLICY:
+            fw_rule_policy(&ctlp->rule);
             break;
         default:
-            printk(KERN_ALERT "MiniFirewall: Received an unknown command\n");
+            printk(KERN_ALERT "tsiFirewall: Received an unknown command\n");
     }
-    printk(KERN_ALERT "MiniFirewall: Added rule\n");
+
     return byte_write;
 }
 
 /* Inbound hook configuration for netfilter */
-struct nf_hook_ops mfw_in_hook_ops = {.hook = mfw_in_filter,
+static struct nf_hook_ops fw_in_hook_ops = {.hook = fw_in_filter,
                                       .pf = PF_INET,
                                       .hooknum = NF_INET_LOCAL_IN,
                                       .priority = NF_IP_PRI_FIRST};
 
 /* Outbound hook configuration for netfilter */
-struct nf_hook_ops mfw_out_hook_ops = {.hook = mfw_out_filter,
+static struct nf_hook_ops fw_out_hook_ops = {.hook = fw_out_filter,
                                        .pf = PF_INET,
                                        .hooknum = NF_INET_LOCAL_OUT,
                                        .priority = NF_IP_PRI_FIRST};
 
 /* File operation configuration for a device file */
-struct file_operations mfw_dev_fops = {.owner = THIS_MODULE,
-                                       .read = mfw_dev_read,
-                                       .write = mfw_dev_write,
-                                       .open = mfw_dev_open,
-                                       .release = mfw_dev_release};
+static struct file_operations fw_dev_fops = {.owner = THIS_MODULE,
+                                       .read = fw_dev_read,
+                                       .write = fw_dev_write,
+                                       .open = fw_dev_open,
+                                       .release = fw_dev_release};
 
 static struct proc_dir_entry *ent;
-/*
- * The MiniFirewall kernel module is initialized by this function.
- */
 
-static int __init mfw_mod_init(void) {
+/*
+ * The tsiFirewall kernel module is initialized by this function.
+ */
+static int __init fw_mod_init(void) {
     /* Initialize static global variables */
     Device_open = 0;
-    Buffer = (char *)kmalloc(sizeof(struct mfw_ctl *), GFP_KERNEL);
+    Buffer = (char *)kmalloc(sizeof(struct fw_ctl *), GFP_KERNEL);
     if (Buffer == NULL) {
         printk(KERN_ALERT
-               "MiniFirewall: Fails to start due to out of memory\n");
+               "tsiFirewall: Fails to start due to out of memory\n");
         return -1;
     }
 
+    /* Init the filter rules and policies */
     INIT_LIST_HEAD(&In_lhead);
     INIT_LIST_HEAD(&Out_lhead);
-    In_policy = 0;
-    Out_policy = 0;
-    /* Register character device */
-    // ret = register_chrdev(DEVICE_MAJOR_NUM, DEVICE_INTF_NAME, &mfw_dev_fops);
-    ent = proc_create(DEVICE_INTF_NAME, 0660, NULL, &mfw_dev_fops); // Creates firewall configuration entry
+    In_policy = 1;
+    Out_policy = 1;
+    remain_read_policy = 2;
+    /* Create entry at /proc */
+    ent = proc_create(DEVICE_INTF_NAME, 0660, NULL, &fw_dev_fops);
     if (ent == NULL) {
-        printk(KERN_ALERT "MiniFirewall: Fails to create proc entry\n");
+        printk(KERN_ALERT "tsiFirewall: Fails to create proc entry\n");
         return -ENOMEM;
     }
 
     /* Register netfilter inbound and outbound hooks */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
-    nf_register_net_hook(&init_net, &mfw_in_hook_ops);
-    nf_register_net_hook(&init_net, &mfw_out_hook_ops);
-#else
-    nf_register_hook(&mfw_in_hook_ops);
-    nf_register_hook(&mfw_out_hook_ops);
-#endif
-    printk(KERN_INFO "MiniFirewall loaded!\n");
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+        nf_register_net_hook(&init_net, &fw_in_hook_ops);
+        nf_register_net_hook(&init_net, &fw_out_hook_ops);
+    #else
+        nf_register_hook(&fw_in_hook_ops);
+        nf_register_hook(&fw_out_hook_ops);
+    #endif
+
+    printk(KERN_INFO "tsiFirewall loaded!\n");
     return 0;
 }
 
 /*
- * The MiniFirewall module is cleaned up by this function.
+ * The tsiFirewall module is cleaned up by this function.
  */
-static void __exit mfw_mod_cleanup(void) {
+static void __exit fw_mod_cleanup(void) {
     struct rule_node *nodep;
     struct rule_node *ntmp;
 
@@ -421,27 +505,25 @@ static void __exit mfw_mod_cleanup(void) {
     list_for_each_entry_safe(nodep, ntmp, &In_lhead, list) {
         list_del(&nodep->list);
         kfree(nodep);
-        printk(KERN_INFO "MiniFirewall: Deleted inbound rule %p\n", nodep);
+        printk(KERN_INFO "tsiFirewall: Deleted inbound rule %p\n", nodep);
     }
 
     list_for_each_entry_safe(nodep, ntmp, &Out_lhead, list) {
         list_del(&nodep->list);
         kfree(nodep);
-        printk(KERN_INFO "MiniFirewall: Deleted outbound rule %p\n", nodep);
+        printk(KERN_INFO "tsiFirewall: Deleted outbound rule %p\n", nodep);
     }
 
     remove_proc_entry(DEVICE_INTF_NAME, NULL);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
-    nf_unregister_net_hook(&init_net, &mfw_in_hook_ops);
-    nf_unregister_net_hook(&init_net, &mfw_out_hook_ops);
-#else
-    nf_unregister_hook(&mfw_in_hook_ops);
-    nf_unregister_hook(&mfw_out_hook_ops);
-#endif
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+        nf_unregister_net_hook(&init_net, &fw_in_hook_ops);
+        nf_unregister_net_hook(&init_net, &fw_out_hook_ops);
+    #else
+        nf_unregister_hook(&fw_in_hook_ops);
+        nf_unregister_hook(&fw_out_hook_ops);
+    #endif
 }
 
-/* Add the (above) initialize function to the module */
-module_init(mfw_mod_init);
-/* Add the (above) cleanup function to the module */
-module_exit(mfw_mod_cleanup);
+module_init(fw_mod_init);
+module_exit(fw_mod_cleanup);
