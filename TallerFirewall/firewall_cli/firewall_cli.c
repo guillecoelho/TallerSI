@@ -12,26 +12,26 @@
 
 static void print_usage(void) {
     printf(
-        "Usage: mf RULE_OPTIONS..\n\n"
-        "Select one of the 5 options:\n"
+        "Usage: tsiFirewall ...\n\n"
+        "Select one of the 5 modes:\n"
         "-a --add            add a rule\n"
         "-r --remove         remove a rule\n"
-        "-g --general        default policy\n"
+        "-g --general        change default policy\n"
         "-v --view           view rules\n"
-        "-h --help           this usage\n\n"
+        "-h --help           help\n\n"
 
-        "For option --add and --remove specify the rule:\n"
+        "For options [add, remove, general] specify the rule: \n"
         "-i --in             input\n"
         "-o --out            output\n"
-        "-s --s_ip           source ip address\n"
-        "-m --s_mask         source mask\n"
-        "-p --s_port         source port\n"
-        "-d --d_ip           destination ip address\n"
-        "-n --d_mask         destination mask\n"
-        "-q --d_port         destination port\n"
-        "-c --proto          protocol\n"
         "-b --block          block\n"
-        "-u --unblock        allow\n"
+        "-u --unblock        allow\n\n"
+        "-s --s_ip      [IPADDRESS]     source ip address\n"
+        "-m --s_mask    [MASK]          source mask\n"
+        "-p --s_port    [PORT]          source port\n"
+        "-d --d_ip      [IPADDRESS]     destination ip address\n"
+        "-n --d_mask    [MASK]          destination mask\n"
+        "-q --d_port    [PORT]          destination port\n"
+        "-c --proto     [PROTOCOL]      protocol(1=ICMP, 6=UDP, 17=TCP)\n"
 );
 }
 

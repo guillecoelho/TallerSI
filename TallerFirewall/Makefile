@@ -16,8 +16,14 @@ cli_clean:
 cli_all:
 	cd firewall_cli && $(MAKE) all
 
+cli_install:
+	cd firewall_cli && $(MAKE) install
+
 module_clean:
 	cd firewall_module && $(MAKE) clean
 
 module_all:
 	cd firewall_module && $(MAKE) all
+
+module_install:
+	cd firewall_module && $(MAKE) install

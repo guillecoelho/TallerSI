@@ -3,9 +3,16 @@
 #
 ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 obj-m += tsiFirewall.o
+TOPDIR=$(CURDIR)
 
 all:clean
-	make -C /lib/modules/$(shell uname -r)/build M=$(ROOT_DIR) modules
+	make -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) modules
+
 clean:
 	rm -rf   Module.symvers modules.order
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	make -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) clean
+
+install: all
+	cp tsiFirewall.ko /lib/modules/$(shell uname -r)/
+	depmod
+	modprobe tsiFirewall
