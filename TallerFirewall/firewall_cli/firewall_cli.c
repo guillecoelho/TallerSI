@@ -26,12 +26,18 @@ static void print_usage(void) {
         "-b --block          block\n"
         "-u --unblock        allow\n\n"
         "-s --s_ip      [IPADDRESS]     source ip address\n"
-        "-m --s_mask    [MASK]          source mask\n"
         "-p --s_port    [PORT]          source port\n"
         "-d --d_ip      [IPADDRESS]     destination ip address\n"
-        "-n --d_mask    [MASK]          destination mask\n"
         "-q --d_port    [PORT]          destination port\n"
         "-c --proto     [PROTOCOL]      protocol(1=ICMP, 6=UDP, 17=TCP)\n"
+        "-x --index     [INDEX]         Insert after rule with a given index\n\n"
+        "Examples of use:\n"
+        "*Add a new rule:\n"
+        "   tsiFirewall -a -b -i -s 192.168.1.201 -p 5555 -d 192.168.222.1 -q 2222 -c 17 -x 1\n"
+        "*Remove a old rule:\n"
+        "   tsiFirewall -r -b -i -s 192.168.1.201 -p 5555 -d 192.168.222.1 -q 2222 -c 17\n"
+        "*Change default policy:\n"
+        "   tsiFirewall -g -b -i\n"
 );
 }
 
@@ -66,7 +72,8 @@ static void view_rules(void) {
     unsigned int Out_policy;
     unsigned int In_policy;
     struct fw_ctl *ctl;
-    
+    int counter_in_rules = 0;
+    int counter_out_rules = 0;
 
     fp = fopen("/proc/tsiFirewall", "r");
     if (fp == NULL) {
@@ -81,9 +88,9 @@ static void view_rules(void) {
     }
 
     /* Each rule is printed line-by-line. */
-	printf("I/O  "
-	       "S_Addr           S_Mask           S_Port "
-	       "D_Addr           D_Mask           D_Port Proto  Action\n");
+	printf("Index   I/O  "
+	       "S_Addr           S_Port "
+	       "D_Addr           D_Port Proto  Action\n");
     while ((byte_count = fread(buffer, 1, sizeof(struct fw_ctl), fp)) > 0) {
         ctl = (struct fw_ctl *)buffer;
         rule = &ctl->rule;
@@ -91,15 +98,19 @@ static void view_rules(void) {
             if (rule->in == 1) In_policy = rule->action;
             if (rule->in == 0) Out_policy = rule->action;
         } else if (ctl->mode == FW_VIEW) {
+            if (rule->in) {
+                counter_in_rules += 1;
+                printf("%-5d   ", counter_in_rules);
+            } else {
+                counter_out_rules += 1;
+                printf("%-5d   ", counter_out_rules);
+            }
+            
             printf("%-3s  ", rule->in ? "In" : "Out");
             addr.s_addr = rule->s_ip;
             printf("%-15s  ", inet_ntoa(addr));
-            addr.s_addr = rule->s_mask;
-            printf("%-15s  ", inet_ntoa(addr));
             printf("%-5d  ", ntohs(ctl->rule.s_port));
             addr.s_addr = rule->d_ip;
-            printf("%-15s  ", inet_ntoa(addr));
-            addr.s_addr = rule->d_mask;
             printf("%-15s  ", inet_ntoa(addr));
             printf("%-5d  ", ntohs(rule->d_port));
             printf("%-3d", rule->proto);
@@ -141,10 +152,8 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
         {"in", no_argument, 0, 'i'},
         {"out", no_argument, 0, 'o'},
         {"s_ip", required_argument, 0, 's'},
-        {"s_mask", required_argument, 0, 'm'},
         {"s_port", required_argument, 0, 'p'},
         {"d_ip", required_argument, 0, 'd'},
-        {"d_mask", required_argument, 0, 'n'},
         {"d_port", required_argument, 0, 'q'},
         {"proto", required_argument, 0, 'c'},
         {"add", no_argument, 0, 'a'},
@@ -153,7 +162,8 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
         {"help", no_argument, 0, 'h'},
         {"block", no_argument, 0, 'b'},
         {"unblock", no_argument, 0, 'u'},
-        {"general", required_argument, 0, 'g'},
+        {"general", no_argument, 0, 'g'},
+        {"index", required_argument, 0, 'x'},
         {0, 0, 0, 0}};
 
     if (argc == 1) {
@@ -162,11 +172,12 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
     }
 
     ctl.mode = FW_NONE;
+    ctl.index = 0;
     ctl.rule.in = 255;
     ctl.rule.action = 255;
     while (1) {
         opt_index = 0;
-        opt = getopt_long(argc, argv, "ios:m:p:d:n:q:c:g:arvhbu", long_options, &opt_index);
+        opt = getopt_long(argc, argv, "ios:p:d:q:c:x:garvhbu", long_options, &opt_index);
         if (opt == -1) {
             break;
         }
@@ -207,13 +218,6 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
                 }
                 ctl.rule.s_ip = addr.s_addr;
                 break;
-            case 'm': /* Source subnet mask */
-                if (inet_aton(optarg, &addr) == 0) {
-                    printf("Invalid source subnet mask\n");
-                    return -1;
-                }
-                ctl.rule.s_mask = addr.s_addr;
-                break;
             case 'p': /* Source port number */
                 lnum = parse_number(optarg, 0, USHRT_MAX);
                 if (lnum < 0) {
@@ -228,13 +232,6 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
                     return -1;
                 }
                 ctl.rule.d_ip = addr.s_addr;
-                break;
-            case 'n': /* Destination subnet mask */
-                if (inet_aton(optarg, &addr) == 0) {
-                    printf("Invalid destination subnet mask\n");
-                    return -1;
-                }
-                ctl.rule.d_mask = addr.s_addr;
                 break;
             case 'q': /* Destination port number */
                 lnum = parse_number(optarg, 0, USHRT_MAX);
@@ -279,8 +276,15 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
                     printf("Only one mode can be selected.\n");
                     return -1;
                 }
-                ctl.rule.action = 0;
                 ctl.mode = FW_POLICY;
+                break;
+            case 'x': /* Index number */
+                lnum = parse_number(optarg, 0, UCHAR_MAX);
+                if (lnum <= 0) {
+                    printf("Invalid index number\n");
+                    return -1;
+                }
+                ctl.index = (uint8_t)lnum;
                 break;
             case 'h':
             case '?':
@@ -297,12 +301,12 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
         printf("Please specify either In or Out\n");
         return -1;
     }
+
     if (ctl.mode != FW_VIEW && ctl.rule.action == 255) {
         printf("Please specify either block or unblock\n");
         return -1;
-        
     }
-    printf("Mode: %d, Action: %d, List: %d\n", ctl.mode, ctl.rule.action, ctl.rule.in);
+
     *ret_ctl = ctl;
     return 0;
 }

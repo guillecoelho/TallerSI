@@ -20,10 +20,8 @@ enum fw_mode {
 struct fw_rule {
 	uint8_t  in; // 1 = Inbound, 0 = Outbound
 	uint32_t s_ip;
-	uint32_t s_mask;
 	uint16_t s_port;
 	uint32_t d_ip;
-	uint32_t d_mask;
 	uint16_t d_port;
 	uint8_t  proto;	// ICMP = 1, UDP =  6, TCP = 17 
 	uint8_t  action; // 1 = Allow, 0 = Deny
@@ -34,6 +32,7 @@ struct fw_rule {
 struct fw_ctl {
 	enum fw_mode mode;
 	struct fw_rule rule;
+	uint8_t index;
 };
 
 #endif

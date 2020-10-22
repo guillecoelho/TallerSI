@@ -17,7 +17,6 @@
 #include "../firewall.h"
 
 #define EQUAL_NET_ADDR(ip1, ip2) ((ip1 ^ ip2) == 0)
-#define EQUAL_NET_ADDR_MASK(ip1, ip2, mask) (((ip1 ^ ip2) & mask) == 0)
 #define NOT_ZERO(x) (x != 0)
 #define IP_POS(ip, i) (ip >> ((8 * (3 - i))) & 0xFF)
 
@@ -41,6 +40,33 @@ static int Device_open; /* Opening counter of a device file */
 static char *Buffer;    /* A buffer for receving data from a user space */
 
 /*
+* Add a new rule to the list
+*/
+static bool fw_add_rule_to_list(struct rule_node * new, struct list_head * head, unsigned int index) {
+    struct rule_node *node;
+    struct list_head *lheadp;
+    struct list_head *lp;
+
+    if (index == 0) {
+        list_add_tail(&new->list, head);
+        return true;
+    } else {
+        lheadp = head;
+        for (lp = lheadp; lp->next != lheadp; lp = lp->next) {
+            if (index == 1) {
+                node = list_entry(lp, struct rule_node, list);
+                list_add(&new->list, &node->list);
+                return true;
+            } else {
+                index -= 1;
+            }
+        }
+    }
+    printk(KERN_ALERT "tsiFirewall: Try to add a rule with a wrong index\n");
+    return false;
+}
+
+/*
 *  Check sanity of a rule
 */
 static bool fw_check_rule(struct fw_ctl *ctlp) {
@@ -60,22 +86,6 @@ static bool fw_check_rule(struct fw_ctl *ctlp) {
 }
 
 /*
-* Compare two given ipv4 and return true if they are equal
-*/
-static bool fw_check_ip(unsigned int ip, unsigned int rule_ip,
-                     unsigned int rule_mask) {
-    bool equal = false;
-    /*if (NOT_ZERO(rule_mask)) {
-        printk(KERN_INFO "Check ip with mask");
-        printk(KERN_INFO "IP: %d", rule_mask);
-        a = EQUAL_NET_ADDR_MASK(ip, rule_ip, rule_mask);
-    } else {*/
-    equal =  EQUAL_NET_ADDR(ip, rule_ip);
-    //}
-    return equal;
-}
-
-/*
  * The function check if a rule already exist.
  */
 static bool fw_rule_exist(struct fw_rule *rule) {
@@ -91,10 +101,8 @@ static bool fw_rule_exist(struct fw_rule *rule) {
     for (lp = lheadp; lp->next != lheadp; lp = lp->next) {
         node = list_entry(lp->next, struct rule_node, list);
         if (node->rule.in == rule->in && node->rule.s_ip == rule->s_ip &&
-            node->rule.s_mask == rule->s_mask &&
             node->rule.s_port == rule->s_port &&
             node->rule.d_ip == rule->d_ip &&
-            node->rule.d_mask == rule->d_mask &&
             node->rule.d_port == rule->d_port &&
             node->rule.proto == rule->proto &&
             node->rule.action == rule->action) {
@@ -144,11 +152,10 @@ static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
         tcph = (struct tcphdr *)(skb_transport_header(skb));
         s_port = tcph->source;
         d_port = tcph->dest;
-    } else if (proto == IPPROTO_ICMP) {
-        printk(KERN_INFO "Dont skip protocol: ICMP PACJAGE,");
-    } else
+    } else if (proto != IPPROTO_ICMP) {
         return NF_ACCEPT;
-    
+    }
+
     /* Loop through the rule list and perform exact match */
     listh = rule_list_head;
     list_for_each_entry(node, listh, list) {
@@ -156,13 +163,13 @@ static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
 
         if (NOT_ZERO(r->proto) && (r->proto != iph->protocol)) continue;
 
-        if (NOT_ZERO(r->s_ip) && !fw_check_ip(s_ip, r->s_ip, r->s_mask)) continue;
+        if (NOT_ZERO(r->s_ip) && !EQUAL_NET_ADDR(s_ip, r->s_ip)) continue;
 
         if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->s_port) && (r->s_port != s_port)) continue;
         }
 
-        if (NOT_ZERO(r->d_ip) && !fw_check_ip(d_ip, r->d_ip, r->d_mask)) continue;
+        if (NOT_ZERO(r->d_ip) && !EQUAL_NET_ADDR(d_ip, r->d_ip)) continue;
 
         if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->d_port) && (r->d_port != d_port)) continue;
@@ -285,9 +292,9 @@ static ssize_t fw_dev_read(struct file *file, char *buffer, size_t length, loff_
 /*
  * The function adds a rule to either an inbound list or an outbound list.
  */
-static void fw_rule_add(struct fw_rule *rule) {
+static void fw_rule_add(struct fw_rule *rule, unsigned int index) {
     struct rule_node *nodep;
-    
+    bool success;
     if (fw_rule_exist(rule)) {
         printk(KERN_ALERT "tsiFirewall: Cannot add a new rule, because already exist\n");
         return;
@@ -302,19 +309,22 @@ static void fw_rule_add(struct fw_rule *rule) {
     }
     nodep->rule = *rule;
 
+
     if (nodep->rule.in == 1) {
-        list_add_tail(&nodep->list, &In_lhead);
-        printk(KERN_INFO "tsiFirewall: Add rule to the inbound list ");
+        success = fw_add_rule_to_list(nodep, &In_lhead, index);
+        if (success) printk(KERN_INFO "tsiFirewall: Add rule to the inbound list ");
     } else {
-        list_add_tail(&nodep->list, &Out_lhead);
-        printk(KERN_INFO "tsiFirewall: Add rule to the outbound list ");
+        success = fw_add_rule_to_list(nodep, &Out_lhead, index);
+        if (success) printk(KERN_INFO "tsiFirewall: Add rule to the outbound list ");
     }
-    /* Print to log the new rule */
-    printk(KERN_INFO "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d  <--- %d\n",
-           IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2), IP_POS(rule->s_ip, 1),
-           IP_POS(rule->s_ip, 0), rule->s_port, IP_POS(rule->d_ip, 3),
-           IP_POS(rule->d_ip, 2), IP_POS(rule->d_ip, 1), IP_POS(rule->d_ip, 0),
-           rule->d_port, rule->proto, rule->action);
+    if (success) {
+        /* Print to log the new rule */
+        printk(KERN_INFO "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d action %s\n",
+            IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2), IP_POS(rule->s_ip, 1),
+            IP_POS(rule->s_ip, 0), rule->s_port, IP_POS(rule->d_ip, 3),
+            IP_POS(rule->d_ip, 2), IP_POS(rule->d_ip, 1), IP_POS(rule->d_ip, 0),
+            rule->d_port, rule->proto, rule->action ? "Allow":"Deny");
+    }
 }
 
 /*
@@ -333,10 +343,8 @@ static void fw_rule_del(struct fw_rule *rule) {
     for (lp = lheadp; lp->next != lheadp; lp = lp->next) {
         node = list_entry(lp->next, struct rule_node, list);
         if (node->rule.in == rule->in && node->rule.s_ip == rule->s_ip &&
-            node->rule.s_mask == rule->s_mask &&
             node->rule.s_port == rule->s_port &&
             node->rule.d_ip == rule->d_ip &&
-            node->rule.d_mask == rule->d_mask &&
             node->rule.d_port == rule->d_port &&
             node->rule.proto == rule->proto &&
             node->rule.action == rule->action) {
@@ -345,12 +353,12 @@ static void fw_rule_del(struct fw_rule *rule) {
             printk(KERN_INFO
                    "tsiFirewall: Remove rule "
                    "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   "
-                   "proto %d\n",
+                   "proto %d    action: %s  direction: %s\n",
                    IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2),
                    IP_POS(rule->s_ip, 1), IP_POS(rule->s_ip, 0), rule->s_port,
                    IP_POS(rule->d_ip, 3), IP_POS(rule->d_ip, 2),
                    IP_POS(rule->d_ip, 1), IP_POS(rule->d_ip, 0), rule->d_port,
-                   rule->proto);
+                   rule->proto, rule->action ? "Allow":"Deny", rule->in ? "In" : "Out");
             break;
         }
     }
@@ -396,7 +404,6 @@ static ssize_t fw_dev_write(struct file *file, const char *buffer,
                              size_t length, loff_t *offset) {
     struct fw_ctl *ctlp;
     int byte_write = 0;
-    printk(KERN_ALERT "tsiFirewall: Try to add rule\n");
     if (length < sizeof(*ctlp)) {
         printk(KERN_ALERT "tsiFirewall: Receives incomplete instruction\n");
         return byte_write;
@@ -418,7 +425,7 @@ static ssize_t fw_dev_write(struct file *file, const char *buffer,
 
     switch (ctlp->mode) {
         case FW_ADD:
-            fw_rule_add(&ctlp->rule);
+            fw_rule_add(&ctlp->rule, ctlp->index);
             break;
         case FW_REMOVE:
             fw_rule_del(&ctlp->rule);
