@@ -23,7 +23,7 @@ struct fw_rule {
 	uint16_t s_port;
 	uint32_t d_ip;
 	uint16_t d_port;
-	uint8_t  proto;	// ICMP = 1, UDP =  6, TCP = 17 
+	uint8_t  proto;	// ICMP = 1, UDP =  17, TCP = 6 
 	uint8_t  action; // 1 = Allow, 0 = Deny
 };
 

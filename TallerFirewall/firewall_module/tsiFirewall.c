@@ -449,7 +449,7 @@ static struct nf_hook_ops fw_in_hook_ops = {.hook = fw_in_filter,
 /* Outbound hook configuration for netfilter */
 static struct nf_hook_ops fw_out_hook_ops = {.hook = fw_out_filter,
                                        .pf = PF_INET,
-                                       .hooknum = NF_INET_LOCAL_OUT,
+                                       .hooknum = NF_INET_POST_ROUTING,
                                        .priority = NF_IP_PRI_FIRST};
 
 /* File operation configuration for a device file */

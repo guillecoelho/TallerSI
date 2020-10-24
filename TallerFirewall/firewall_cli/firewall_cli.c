@@ -29,7 +29,7 @@ static void print_usage(void) {
         "-p --s_port    [PORT]          source port\n"
         "-d --d_ip      [IPADDRESS]     destination ip address\n"
         "-q --d_port    [PORT]          destination port\n"
-        "-c --proto     [PROTOCOL]      protocol(1=ICMP, 6=UDP, 17=TCP)\n"
+        "-c --proto     [PROTOCOL]      protocol(%d=ICMP, %d=UDP, %d=TCP)\n"
         "-x --index     [INDEX]         Insert after rule with a given index\n\n"
         "Examples of use:\n"
         "*Add a new rule:\n"
@@ -37,7 +37,8 @@ static void print_usage(void) {
         "*Remove a old rule:\n"
         "   tsiFirewall -r -b -i -s 192.168.1.201 -p 5555 -d 192.168.222.1 -q 2222 -c 17\n"
         "*Change default policy:\n"
-        "   tsiFirewall -g -b -i\n"
+        "   tsiFirewall -g -b -i\n",
+        IPPROTO_ICMP,IPPROTO_UDP,IPPROTO_TCP
 );
 }
 
@@ -244,7 +245,7 @@ static int parse_arguments(int argc, char **argv, struct fw_ctl *ret_ctl) {
             case 'c': /* Protocol number */
                 lnum = parse_number(optarg, 0, UCHAR_MAX);
                 if (lnum < 0 || !(lnum == 0 || lnum == IPPROTO_TCP ||
-                                  lnum == IPPROTO_UDP)) {
+                                  lnum == IPPROTO_UDP || lnum == IPPROTO_ICMP)) {
                     printf("Invalid protocol number\n");
                     return -1;
                 }
