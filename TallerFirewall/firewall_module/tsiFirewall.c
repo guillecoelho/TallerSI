@@ -1,22 +1,15 @@
-#include <linux/fs.h>
-#include <linux/in.h>
-#include <linux/init.h>
-#include <linux/ip.h>
-#include <linux/kernel.h>
-#include <linux/list.h>
 #include <linux/module.h>
+#include <linux/kernel.h>
+
+#include <linux/ip.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/proc_fs.h>
-#include <linux/slab.h>
 #include <linux/tcp.h>
-#include <linux/types.h>
 #include <linux/udp.h>
 #include <linux/version.h>
-#include <linux/inet.h>
 
 #include "../firewall.h"
 
-#define EQUAL_NET_ADDR(ip1, ip2) ((ip1 ^ ip2) == 0)
 #define NOT_ZERO(x) (x != 0)
 #define IP_POS(ip, i) (ip >> ((8 * (3 - i))) & 0xFF)
 
@@ -163,21 +156,18 @@ static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
 
         if (NOT_ZERO(r->proto) && (r->proto != iph->protocol)) continue;
 
-        if (NOT_ZERO(r->s_ip) && !EQUAL_NET_ADDR(s_ip, r->s_ip)) continue;
+        if (NOT_ZERO(r->s_ip) && s_ip != r->s_ip) continue;
+
+        if (NOT_ZERO(r->d_ip) && d_ip != r->d_ip) continue;
 
         if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->s_port) && (r->s_port != s_port)) continue;
-        }
-
-        if (NOT_ZERO(r->d_ip) && !EQUAL_NET_ADDR(d_ip, r->d_ip)) continue;
-
-        if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->d_port) && (r->d_port != d_port)) continue;
         }
 
         if (r->action == 1){
             return NF_ACCEPT;          
-       } else if (r->action == 0) {
+        } else if (r->action == 0) {
             printk(KERN_INFO
                    "tsiFirewall: Drop packet "
                    "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d\n",
@@ -449,7 +439,7 @@ static struct nf_hook_ops fw_in_hook_ops = {.hook = fw_in_filter,
 /* Outbound hook configuration for netfilter */
 static struct nf_hook_ops fw_out_hook_ops = {.hook = fw_out_filter,
                                        .pf = PF_INET,
-                                       .hooknum = NF_INET_POST_ROUTING,
+                                       .hooknum = NF_INET_LOCAL_OUT,
                                        .priority = NF_IP_PRI_FIRST};
 
 /* File operation configuration for a device file */

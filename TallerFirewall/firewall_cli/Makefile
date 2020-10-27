@@ -25,4 +25,4 @@ clean:
 
 install: all
 	install -d $(DESTDIR)$(PREFIX)/bin/
-	install -m 111 tsiFirewall $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 tsiFirewall $(DESTDIR)$(PREFIX)/bin/

@@ -1,7 +1,6 @@
 #
 # Makefile to build the kernel module for tsiFirewall
 #
-ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 obj-m += tsiFirewall.o
 TOPDIR=$(CURDIR)
 

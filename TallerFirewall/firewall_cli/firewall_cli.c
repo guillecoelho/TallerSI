@@ -3,12 +3,8 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
 #include "../firewall.h"
-
-#define PORT_NUM_MAX USHRT_MAX
 
 static void print_usage(void) {
     printf(
@@ -30,7 +26,7 @@ static void print_usage(void) {
         "-d --d_ip      [IPADDRESS]     destination ip address\n"
         "-q --d_port    [PORT]          destination port\n"
         "-c --proto     [PROTOCOL]      protocol(%d=ICMP, %d=UDP, %d=TCP)\n"
-        "-x --index     [INDEX]         Insert after rule with a given index\n\n"
+        "-x --index     [INDEX]         insert new rule before the rule at the given index\n\n"
         "Examples of use:\n"
         "*Add a new rule:\n"
         "   tsiFirewall -a -b -i -s 192.168.1.201 -p 5555 -d 192.168.222.1 -q 2222 -c 17 -x 1\n"
