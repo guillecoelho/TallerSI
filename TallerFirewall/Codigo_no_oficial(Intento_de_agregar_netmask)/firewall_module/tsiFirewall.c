@@ -1,12 +1,18 @@
-#include <linux/module.h>
-#include <linux/kernel.h>
-
+#include <linux/fs.h>
+#include <linux/in.h>
+#include <linux/init.h>
 #include <linux/ip.h>
+#include <linux/kernel.h>
+#include <linux/list.h>
+#include <linux/module.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/proc_fs.h>
+#include <linux/slab.h>
 #include <linux/tcp.h>
+#include <linux/types.h>
 #include <linux/udp.h>
 #include <linux/version.h>
+#include <linux/inet.h>
 
 #include "../firewall.h"
 
@@ -60,12 +66,26 @@ static bool fw_add_rule_to_list(struct rule_node * new, struct list_head * head,
 }
 
 /*
+*  Check if two ip are equal
+*/
+static bool fw_compare_ip(u_int32_t in_ip, u_int32_t rule_ip, int cidr) {
+    int mask = (-1) << (32 - cidr);
+    if (((in_ip ^ rule_ip) & mask) == 0) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+/*
 *  Check sanity of a rule
 */
 static bool fw_check_rule(struct fw_ctl *ctlp) {
     if  (ctlp->mode == FW_ADD ||  ctlp->mode == FW_REMOVE) {
         if ((ctlp->rule.in == 0 || ctlp->rule.in == 1) && 
             (ctlp->rule.action == 0 || ctlp->rule.action == 1) &&
+            (ctlp->rule.s_mask >= 0 && ctlp->rule.s_mask < 33) &&
+            (ctlp->rule.d_mask >= 0 && ctlp->rule.d_mask < 33) &&
             (ctlp->rule.proto == IPPROTO_UDP || ctlp->rule.proto == IPPROTO_TCP || ctlp->rule.proto == IPPROTO_ICMP || ctlp->rule.proto == 0)) {
                 return true;
             }
@@ -94,8 +114,10 @@ static bool fw_rule_exist(struct fw_rule *rule) {
     for (lp = lheadp; lp->next != lheadp; lp = lp->next) {
         node = list_entry(lp->next, struct rule_node, list);
         if (node->rule.in == rule->in && node->rule.s_ip == rule->s_ip &&
+            node->rule.s_mask == rule->s_mask &&
             node->rule.s_port == rule->s_port &&
             node->rule.d_ip == rule->d_ip &&
+            node->rule.d_mask == rule->d_mask &&
             node->rule.d_port == rule->d_port &&
             node->rule.proto == rule->proto &&
             node->rule.action == rule->action) {
@@ -125,8 +147,10 @@ static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
     uint16_t d_port;
     unsigned char proto;
 
-    if (!skb || rule_list_head->next == rule_list_head)
+    if (!skb)
         return NF_ACCEPT;
+    if (rule_list_head->next == rule_list_head)
+        return (policy == 0 ? NF_DROP : NF_ACCEPT);
 
     /* Get IP header and extract information */
     iph = (struct iphdr *)skb_network_header(skb);
@@ -156,9 +180,9 @@ static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
 
         if (NOT_ZERO(r->proto) && (r->proto != iph->protocol)) continue;
 
-        if (NOT_ZERO(r->s_ip) && s_ip != r->s_ip) continue;
+        if (NOT_ZERO(r->s_ip) && !fw_compare_ip(s_ip, r->s_ip, r->s_mask)) continue;
 
-        if (NOT_ZERO(r->d_ip) && d_ip != r->d_ip) continue;
+        if (NOT_ZERO(r->d_ip) && !fw_compare_ip(d_ip, r->d_ip, r->d_mask)) continue;
 
         if (proto != IPPROTO_ICMP) {
             if (NOT_ZERO(r->s_port) && (r->s_port != s_port)) continue;
@@ -167,7 +191,7 @@ static unsigned int fw_general_filter(void *priv, struct sk_buff *skb,
 
         if (r->action == 1){
             return NF_ACCEPT;          
-        } else if (r->action == 0) {
+       } else if (r->action == 0) {
             printk(KERN_INFO
                    "tsiFirewall: Drop packet "
                    "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d\n",
@@ -309,11 +333,12 @@ static void fw_rule_add(struct fw_rule *rule, unsigned int index) {
     }
     if (success) {
         /* Print to log the new rule */
-        printk(KERN_INFO "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   proto %d action %s\n",
+        printk(KERN_INFO "src %d.%d.%d.%d : %d  src_mask %d  dst %d.%d.%d.%d : %d dst_mask %d "
+                         " proto %d action %s\n",
             IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2), IP_POS(rule->s_ip, 1),
-            IP_POS(rule->s_ip, 0), rule->s_port, IP_POS(rule->d_ip, 3),
+            IP_POS(rule->s_ip, 0), rule->s_port, rule->s_mask,  IP_POS(rule->d_ip, 3),
             IP_POS(rule->d_ip, 2), IP_POS(rule->d_ip, 1), IP_POS(rule->d_ip, 0),
-            rule->d_port, rule->proto, rule->action ? "Allow":"Deny");
+            rule->d_port,rule->d_mask, rule->proto, rule->action ? "Allow":"Deny");
     }
 }
 
@@ -333,8 +358,10 @@ static void fw_rule_del(struct fw_rule *rule) {
     for (lp = lheadp; lp->next != lheadp; lp = lp->next) {
         node = list_entry(lp->next, struct rule_node, list);
         if (node->rule.in == rule->in && node->rule.s_ip == rule->s_ip &&
+            node->rule.s_mask == rule->s_mask &&
             node->rule.s_port == rule->s_port &&
             node->rule.d_ip == rule->d_ip &&
+            node->rule.d_mask == rule->d_mask &&
             node->rule.d_port == rule->d_port &&
             node->rule.proto == rule->proto &&
             node->rule.action == rule->action) {
@@ -342,12 +369,12 @@ static void fw_rule_del(struct fw_rule *rule) {
             kfree(node);
             printk(KERN_INFO
                    "tsiFirewall: Remove rule "
-                   "src %d.%d.%d.%d : %d   dst %d.%d.%d.%d : %d   "
+                   "src %d.%d.%d.%d : %d  src_mask %d dst %d.%d.%d.%d : %d  dst_mask %d  "
                    "proto %d    action: %s  direction: %s\n",
                    IP_POS(rule->s_ip, 3), IP_POS(rule->s_ip, 2),
-                   IP_POS(rule->s_ip, 1), IP_POS(rule->s_ip, 0), rule->s_port,
+                   IP_POS(rule->s_ip, 1), IP_POS(rule->s_ip, 0), rule->s_port, rule->s_mask,
                    IP_POS(rule->d_ip, 3), IP_POS(rule->d_ip, 2),
-                   IP_POS(rule->d_ip, 1), IP_POS(rule->d_ip, 0), rule->d_port,
+                   IP_POS(rule->d_ip, 1), IP_POS(rule->d_ip, 0), rule->d_port, rule->d_mask,
                    rule->proto, rule->action ? "Allow":"Deny", rule->in ? "In" : "Out");
             break;
         }
