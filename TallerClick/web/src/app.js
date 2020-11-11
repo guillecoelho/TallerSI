@@ -1,6 +1,6 @@
 var xmlHTTP = new XMLHttpRequest();
 try {
-	xmlHTTP.open('GET', 'conf.xml', false);
+	xmlHTTP.open('GET', 'web.config', false);
 	xmlHTTP.send(null);
 } catch (e) {
 	window.alert('Unable to load the requested file.');
