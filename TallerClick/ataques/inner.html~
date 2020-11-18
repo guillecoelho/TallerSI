@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body></body>
+  <iframe
+    id="inner"
+    src="view-source:view-source:http://www.originalphpbb.com/search.php?search_id=egosearch"
+    width="1000px"
+    height="3000px"
+    scrolling="no"
+    frameborder="none"
+    style="opacity=0";
+  >
+  </iframe>
+</html>

